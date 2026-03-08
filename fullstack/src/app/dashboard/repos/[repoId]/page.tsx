@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, use } from 'react'
+import { useEffect, useState, useCallback, useRef, use } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft,
@@ -45,6 +45,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
   const [targetLanguages, setTargetLanguages] = useState<string[]>([])
   const [runMode, setRunMode] = useState('platform')
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set())
+  const [translatedPaths, setTranslatedPaths] = useState<Set<string>>(new Set())
 
   const [activeJob, setActiveJob] = useState<JobDetail | null>(null)
   const [triggering, setTriggering] = useState(false)
@@ -70,10 +71,14 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
   const loadTree = useCallback(async () => {
     setTreeLoading(true)
     try {
-      const t = await reposApi.getTree(repoId)
+      const [t, tracked, translated] = await Promise.all([
+        reposApi.getTree(repoId),
+        reposApi.getTrackedDocs(repoId),
+        reposApi.getTranslatedDocs(repoId).catch(() => []),
+      ])
       setTree(t)
-      const tracked = await reposApi.getTrackedDocs(repoId)
-      setSelectedDocs(new Set(tracked.map((d) => d.filePath)))
+      setSelectedDocs(new Set(tracked.map((d) => d.sourcePath)))
+      setTranslatedPaths(new Set(translated))
     } catch {
       // ignore
     } finally {
@@ -86,6 +91,19 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
       () => setLoading(false),
     )
   }, [loadRepo, loadTree])
+
+  const initialLoadDone = useRef(false)
+  useEffect(() => {
+    if (!initialLoadDone.current || !repoId || !tree) return
+    const timer = setTimeout(() => {
+      reposApi.saveTrackedDocs(repoId, Array.from(selectedDocs)).catch(() => {})
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [repoId, selectedDocs, tree])
+
+  useEffect(() => {
+    if (!loading && tree) initialLoadDone.current = true
+  }, [loading, tree])
 
   useEffect(() => {
     if (!activeJob) return
@@ -128,7 +146,16 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
 
   const handleTrigger = async () => {
     setTriggering(true)
+    setSaveMsg(null)
     try {
+      // 自动保存配置和文档选择，避免用户忘记点「保存配置」
+      await reposApi.saveConfig(repoId, {
+        baseLanguage,
+        targetLanguages,
+        runMode,
+      })
+      await reposApi.saveTrackedDocs(repoId, Array.from(selectedDocs))
+
       const result = await jobsApi.trigger(repoId)
       const detail = await jobsApi.get(result.jobId)
       setActiveJob(detail)
@@ -155,6 +182,14 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
       const next = new Set(prev)
       if (next.has(path)) next.delete(path)
       else next.add(path)
+      return next
+    })
+  }
+
+  const selectPaths = (paths: string[], add: boolean) => {
+    setSelectedDocs((prev) => {
+      const next = new Set(prev)
+      paths.forEach((p) => (add ? next.add(p) : next.delete(p)))
       return next
     })
   }
@@ -295,7 +330,13 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
             {treeLoading ? (
               <LoadingSpinner text="扫描文件树..." className="py-8" />
             ) : tree ? (
-              <FileTree files={tree.files} selected={selectedDocs} onToggle={toggleDoc} />
+              <FileTree
+                  files={tree.files}
+                  selected={selectedDocs}
+                  onToggle={toggleDoc}
+                  onSelectPaths={selectPaths}
+                  translatedPaths={translatedPaths}
+                />
             ) : (
               <p className="text-sm text-surface-400 py-6 text-center">无法加载文件树</p>
             )}
