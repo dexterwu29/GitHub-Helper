@@ -1,5 +1,8 @@
 import { Octokit } from '@octokit/rest'
 import { createAppAuth } from '@octokit/auth-app'
+import fs from 'fs'
+import path from 'path'
+import crypto from 'crypto'
 
 export function getOctokit(token: string) {
   return new Octokit({ auth: token })
@@ -29,12 +32,60 @@ export async function getGitHubUser(accessToken: string) {
   return data
 }
 
+function resolvePrivateKey(): string {
+  // Priority 1: read from .pem file (most reliable on Windows)
+  const pemPath = process.env.GITHUB_APP_PRIVATE_KEY_PATH
+    || path.resolve(process.cwd(), 'private-key.pem')
+  try {
+    if (fs.existsSync(pemPath)) {
+      const pem = fs.readFileSync(pemPath, 'utf-8').trim()
+      if (pem.includes('-----BEGIN')) return normalizePem(pem)
+    }
+  } catch { /* fall through */ }
+
+  // Priority 2: env var
+  const raw = process.env.GITHUB_APP_PRIVATE_KEY
+  if (!raw) throw new Error('GitHub App private key not found. Place private-key.pem in project root or set GITHUB_APP_PRIVATE_KEY env var.')
+
+  // Could be base64 encoded
+  if (!raw.includes('-----BEGIN')) {
+    try {
+      const decoded = Buffer.from(raw, 'base64').toString('utf-8')
+      if (decoded.includes('-----BEGIN')) return normalizePem(decoded)
+    } catch { /* fall through */ }
+  }
+
+  return normalizePem(raw)
+}
+
+function normalizePem(pem: string): string {
+  let key = pem.replace(/\\n/g, '\n').replace(/\r\n/g, '\n').trim()
+
+  // Convert PKCS#1 to PKCS#8 for Node.js 20+ / OpenSSL 3.x compatibility
+  if (key.includes('BEGIN RSA PRIVATE KEY')) {
+    try {
+      const keyObj = crypto.createPrivateKey({ key, format: 'pem' })
+      key = keyObj.export({ type: 'pkcs8', format: 'pem' }) as string
+    } catch {
+      // If conversion fails, return as-is and let downstream handle it
+    }
+  }
+
+  return key
+}
+
+let _cachedKey: string | null = null
+function getPrivateKey(): string {
+  if (!_cachedKey) _cachedKey = resolvePrivateKey()
+  return _cachedKey
+}
+
 export function getAppOctokit() {
   return new Octokit({
     authStrategy: createAppAuth,
     auth: {
       appId: process.env.GITHUB_APP_ID!,
-      privateKey: process.env.GITHUB_APP_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+      privateKey: getPrivateKey(),
     },
   })
 }

@@ -127,6 +127,26 @@ export default function JobsPage({ params }: { params: Promise<{ repoId: string 
     }
   }
 
+  const [processing, setProcessing] = useState(false)
+  const handleProcessNow = async () => {
+    setProcessing(true)
+    try {
+      const res = await fetch('/api/cron/process-jobs', { credentials: 'include' })
+      if (res.ok) {
+        await loadJobs(jobPage)
+        if (selectedJob && (selectedJob.status === 'pending' || selectedJob.status === 'running')) {
+          const updated = await jobsApi.get(selectedJob.id)
+          setSelectedJob(updated)
+        }
+      }
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  const hasPendingJobs = jobList.some((j) => j.status === 'pending' || j.status === 'running')
+  const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+
   if (loading) return <LoadingSpinner text="加载任务数据..." />
 
   return (
@@ -166,6 +186,18 @@ export default function JobsPage({ params }: { params: Promise<{ repoId: string 
       {tab === 'jobs' && (
         <div className="grid lg:grid-cols-5 gap-6">
           <div className="lg:col-span-3 space-y-3">
+            {isLocalDev && hasPendingJobs && (
+              <div className="card p-3 bg-amber-50 border-amber-200">
+                <p className="text-xs text-amber-800 mb-2">本地开发：Vercel Cron 不会自动执行，请手动触发</p>
+                <button
+                  onClick={handleProcessNow}
+                  disabled={processing}
+                  className="btn-primary text-sm"
+                >
+                  {processing ? '处理中...' : '立即处理排队任务'}
+                </button>
+              </div>
+            )}
             {jobList.length === 0 ? (
               <div className="card p-10 text-center">
                 <p className="text-surface-400">暂无翻译任务</p>

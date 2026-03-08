@@ -7,7 +7,12 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     ...options,
   })
 
-  const json = await res.json()
+  let json: { code?: number; message?: string; errorCode?: string; data?: T }
+  try {
+    json = await res.json()
+  } catch {
+    throw new ApiError('PARSE_ERROR', res.status >= 500 ? '服务异常' : '响应解析失败', res.status)
+  }
 
   if (json.code !== 0) {
     throw new ApiError(json.errorCode || 'UNKNOWN', json.message || '请求失败', res.status)
@@ -66,8 +71,8 @@ export interface RepoTree {
 
 export interface TrackedDoc {
   id: string
-  filePath: string
-  lastKnownSha: string | null
+  sourcePath: string
+  isActive: boolean
 }
 
 export interface ApiKey {
@@ -158,6 +163,8 @@ export const repos = {
       body: JSON.stringify(config),
     }),
   getTrackedDocs: (repoId: string) => request<TrackedDoc[]>(`/repos/${repoId}/tracked-docs`),
+  getTranslatedDocs: (repoId: string) =>
+    request<{ paths: string[] }>(`/repos/${repoId}/translated-docs`).then((d) => d.paths),
   saveTrackedDocs: (repoId: string, filePaths: string[]) =>
     request<TrackedDoc[]>(`/repos/${repoId}/tracked-docs`, {
       method: 'PUT',

@@ -6,7 +6,10 @@ export async function translateMarkdown(
   apiKey: string,
   model?: string
 ): Promise<string> {
-  const actualModel = model || process.env.OPENROUTER_DEFAULT_MODEL || 'google/gemini-2.0-flash-001'
+  const actualModel =
+    model ||
+    process.env.OPENROUTER_DEFAULT_MODEL ||
+    'z-ai/glm-4.5-air:free'
 
   const systemPrompt = `You are a professional technical document translator. Translate the following Markdown document to ${targetLang}. Rules:
 1. Preserve ALL Markdown formatting (headers, links, code blocks, tables, lists)

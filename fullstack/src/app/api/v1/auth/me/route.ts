@@ -6,7 +6,7 @@ export async function GET() {
 
   return ok({
     id: user.id.toString(),
-    githubId: user.githubUserId,
+    githubId: Number(user.githubUserId),
     login: user.githubLogin,
     avatarUrl: user.githubAvatarUrl,
   })

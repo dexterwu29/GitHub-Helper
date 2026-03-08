@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   Plus,
@@ -16,6 +17,7 @@ import LoadingSpinner from '@/components/LoadingSpinner'
 import EmptyState from '@/components/EmptyState'
 
 export default function DashboardPage() {
+  const searchParams = useSearchParams()
   const [repoList, setRepoList] = useState<Repo[]>([])
   const [installations, setInstallations] = useState<Installation[]>([])
   const [loading, setLoading] = useState(true)
@@ -23,22 +25,34 @@ export default function DashboardPage() {
   const [importUrl, setImportUrl] = useState('')
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState('')
+  const [justInstalled, setJustInstalled] = useState(false)
+
+  const [installError, setInstallError] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
-      const [r, inst] = await Promise.all([reposApi.list(), githubApp.getInstallations()])
+      const r = await reposApi.list()
       setRepoList(r)
+    } catch { /* ignore */ }
+
+    try {
+      const inst = await githubApp.getInstallations()
       setInstallations(inst)
+      setInstallError(false)
     } catch {
-      // handle silently
-    } finally {
-      setLoading(false)
+      setInstallError(true)
     }
+
+    setLoading(false)
   }, [])
 
   useEffect(() => {
+    if (searchParams.get('installation_id')) {
+      setJustInstalled(true)
+      window.history.replaceState({}, '', '/dashboard')
+    }
     fetchData()
-  }, [fetchData])
+  }, [fetchData, searchParams])
 
   const handleInstallApp = async () => {
     try {
@@ -95,8 +109,34 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* App installed success banner */}
+      {justInstalled && hasApp && (
+        <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-4 flex items-start gap-3">
+          <CheckCircle2 className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-green-800">GitHub App 安装成功！</p>
+            <p className="text-sm text-green-600 mt-0.5">
+              现在可以导入仓库开始翻译文档了。
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Private key config error banner */}
+      {installError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-start gap-3">
+          <XCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-red-800">GitHub App 私钥配置错误</p>
+            <p className="text-sm text-red-600 mt-0.5">
+              请将 GitHub App 的 <code className="bg-red-100 px-1 rounded">private-key.pem</code> 文件放到项目根目录，然后重启服务。
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* App install banner */}
-      {!hasApp && (
+      {!hasApp && !installError && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
           <div>
@@ -104,7 +144,7 @@ export default function DashboardPage() {
             <p className="text-sm text-amber-600 mt-0.5">
               请先安装{' '}
               <button onClick={handleInstallApp} className="underline font-medium cursor-pointer">
-                GitHub-translator-helper-app
+                dexter-translator-helper-app
               </button>
               {' '}到你的账号或组织，以便访问仓库。
             </p>
@@ -168,6 +208,7 @@ export default function DashboardPage() {
 }
 
 function RepoCard({ repo }: { repo: Repo }) {
+  const githubUrl = `https://github.com/${repo.fullName}`
   return (
     <Link href={`/dashboard/repos/${repo.id}`} className="block">
       <div className="card-hover p-5">
@@ -179,15 +220,24 @@ function RepoCard({ repo }: { repo: Repo }) {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-semibold text-surface-900">{repo.fullName}</h3>
-                <a
-                  href={`https://github.com/${repo.fullName}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-surface-400 hover:text-brand-500 cursor-pointer"
-                  onClick={(e) => e.stopPropagation()}
+                <span
+                  role="link"
+                  tabIndex={0}
+                  className="text-surface-400 hover:text-brand-500 cursor-pointer inline-flex"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    window.open(githubUrl, '_blank', 'noopener,noreferrer')
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      window.open(githubUrl, '_blank', 'noopener,noreferrer')
+                    }
+                  }}
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                </span>
               </div>
               <p className="text-xs text-surface-400 mt-0.5">
                 分支: {repo.defaultBranch}

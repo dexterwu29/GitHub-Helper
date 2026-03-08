@@ -58,8 +58,9 @@ export default function Navbar({ user, onLogout }: NavbarProps) {
                     {user.login}
                   </span>
                 </div>
-                <button onClick={onLogout} className="btn-ghost text-sm text-surface-500 hover:text-red-500" title="退出登录">
+                <button onClick={onLogout} className="btn-ghost text-sm text-surface-500 hover:text-red-500 hover:bg-red-50" title="退出登录">
                   <LogOut className="w-4 h-4" />
+                  <span className="hidden sm:inline">退出</span>
                 </button>
               </div>
             </nav>
