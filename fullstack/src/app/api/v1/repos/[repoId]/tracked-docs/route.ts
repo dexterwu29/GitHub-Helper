@@ -23,6 +23,7 @@ export async function GET(
   return ok(docs.map((d) => ({
     id: d.id.toString(),
     sourcePath: d.sourcePath,
+    targetLanguages: (d.targetLanguages as string[]) || [],
     isActive: d.isActive,
   })))
 }
@@ -42,20 +43,34 @@ export async function PUT(
     if (!repo || repo.ownerGithubId !== user.id) return notFound('Repository not found')
 
     const body = await req.json()
-    const { filePaths } = body
+    const { filePaths, removedPaths, docLanguages } = body
     if (!Array.isArray(filePaths)) return badRequest('filePaths must be an array')
 
     const uniquePaths = [...new Set(filePaths)].filter((fp): fp is string => typeof fp === 'string' && fp.length > 0)
+    const toRemove = Array.isArray(removedPaths)
+      ? [...new Set(removedPaths)].filter((fp): fp is string => typeof fp === 'string' && fp.length > 0)
+      : []
+    const langMap = (typeof docLanguages === 'object' && docLanguages !== null ? docLanguages : {}) as Record<string, string[]>
+
+    const config = await prisma.translationConfig.findUnique({
+      where: { repoId: repo.id },
+    })
+    const defaultLangs = (config?.targetLanguages as string[]) || []
 
     await prisma.$transaction(async (tx) => {
-      await tx.trackedDocument.deleteMany({ where: { repoId: repo.id } })
-      if (uniquePaths.length > 0) {
-        await tx.trackedDocument.createMany({
-          data: uniquePaths.map((fp) => ({
-            repoId: repo.id,
-            sourcePath: fp,
-          })),
-          skipDuplicates: true,
+      if (toRemove.length > 0) {
+        await tx.trackedDocument.deleteMany({
+          where: { repoId: repo.id, sourcePath: { in: toRemove } },
+        })
+      }
+      for (const fp of uniquePaths) {
+        const langs = Array.isArray(langMap[fp]) && langMap[fp].length > 0
+          ? langMap[fp]
+          : defaultLangs
+        await tx.trackedDocument.upsert({
+          where: { repoId_sourcePath: { repoId: repo.id, sourcePath: fp } },
+          create: { repoId: repo.id, sourcePath: fp, targetLanguages: langs },
+          update: { isActive: true, targetLanguages: langs },
         })
       }
     })
@@ -68,6 +83,7 @@ export async function PUT(
     return ok(docs.map((d) => ({
       id: d.id.toString(),
       sourcePath: d.sourcePath,
+      targetLanguages: (d.targetLanguages as string[]) || [],
       isActive: d.isActive,
     })))
   } catch (err) {

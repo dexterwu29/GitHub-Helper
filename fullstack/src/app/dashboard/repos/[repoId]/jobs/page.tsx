@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useEffect, useState, useRef, use } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft,
@@ -40,6 +40,10 @@ export default function JobsPage({ params }: { params: Promise<{ repoId: string 
   const [detailLoading, setDetailLoading] = useState(false)
 
   const [prList, setPrList] = useState<PullRequestInfo[]>([])
+
+  const prevJobStatusesRef = useRef<Map<string, string>>(new Map())
+  const prevSelectedStatusRef = useRef<string | null>(null)
+  const originalTitleRef = useRef<string>(typeof document !== 'undefined' ? document.title : '')
 
   const pageSize = 10
   const jobTotalPages = Math.ceil(jobTotal / pageSize)
@@ -93,6 +97,54 @@ export default function JobsPage({ params }: { params: Promise<{ repoId: string 
 
     return () => clearInterval(timer)
   }, [selectedJob])
+
+  // 任务完成/失败时：标签页标题提示 + 提示音
+  useEffect(() => {
+    const terminal = ['completed', 'failed', 'partial', 'cancelled']
+    const runnings = ['pending', 'running']
+
+    const notify = (type: 'success' | 'error') => {
+      const suffix = type === 'success' ? '✅ 完成' : '❌ 失败'
+      document.title = `[${suffix}] ${originalTitleRef.current}`
+      try {
+        const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)()
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.frequency.value = type === 'success' ? 523 : 200
+        gain.gain.setValueAtTime(0.15, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2)
+        osc.start(ctx.currentTime)
+        osc.stop(ctx.currentTime + 0.2)
+      } catch { /* 忽略音频失败 */ }
+    }
+
+    for (const job of jobList) {
+      const prev = prevJobStatusesRef.current.get(job.id)
+      if ((prev === 'pending' || prev === 'running') && terminal.includes(job.status)) {
+        notify(job.status === 'failed' ? 'error' : 'success')
+        break
+      }
+      prevJobStatusesRef.current.set(job.id, job.status)
+    }
+
+    if (selectedJob) {
+      const prev = prevSelectedStatusRef.current
+      if ((prev === 'pending' || prev === 'running') && terminal.includes(selectedJob.status)) {
+        notify(selectedJob.status === 'failed' ? 'error' : 'success')
+      }
+      prevSelectedStatusRef.current = selectedJob.status
+    }
+  }, [jobList, selectedJob])
+
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === 'visible') document.title = originalTitleRef.current
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
+  }, [])
 
   const openJobDetail = async (jobId: string) => {
     setDetailLoading(true)
@@ -190,7 +242,7 @@ export default function JobsPage({ params }: { params: Promise<{ repoId: string 
           翻译任务 ({jobTotal})
         </button>
         <button
-          onClick={() => setTab('prs')}
+          onClick={() => { setTab('prs'); loadPRs() }}
           className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors cursor-pointer ${
             tab === 'prs'
               ? 'border-brand-500 text-brand-600'
@@ -349,6 +401,16 @@ export default function JobsPage({ params }: { params: Promise<{ repoId: string 
 
       {tab === 'prs' && (
         <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-surface-500">从 GitHub 同步状态，用户合并/关闭后点击刷新</p>
+            <button
+              onClick={() => loadPRs()}
+              className="btn-ghost text-xs flex items-center gap-1"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              刷新 PR 状态
+            </button>
+          </div>
           {prList.length === 0 ? (
             <div className="card p-10 text-center">
               <p className="text-surface-400">暂无 Pull Request</p>
@@ -374,9 +436,11 @@ export default function JobsPage({ params }: { params: Promise<{ repoId: string 
                       }`}
                     />
                     <div>
-                      <p className="text-sm font-medium text-surface-800">{pr.title}</p>
+                      <p className="text-sm font-medium text-surface-800">
+                        任务 #{pr.jobId} · PR #{pr.prNumber}
+                      </p>
                       <p className="text-xs text-surface-400 mt-0.5">
-                        #{pr.prNumber} · {new Date(pr.createdAt).toLocaleString('zh-CN')}
+                        {new Date(pr.createdAt).toLocaleString('zh-CN')}
                       </p>
                     </div>
                   </div>

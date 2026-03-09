@@ -4,6 +4,7 @@ import { GITHUB_APP_DISPLAY_NAME, GITHUB_APP_URL } from '@/lib/constants'
 import { getInstallationOctokit, getFileContent, createOrUpdateFile, getFileSha, createBranch, createPullRequest } from '@/lib/server/github'
 import { translateMarkdown } from '@/lib/server/translation'
 import { decrypt } from '@/lib/server/crypto'
+import { buildReadmeTranslationsSection, upsertReadmeTranslationsSection } from '@/lib/server/readme-translations'
 
 /** 测试阶段：每个仓库平台额度可调用翻译任务数 */
 const PLATFORM_QUOTA_PER_REPO = 100
@@ -171,6 +172,31 @@ export async function GET(req: NextRequest) {
 
         if (completedCount > 0) {
           try {
+            if (config.readmeLinksEnabled) {
+              const completedItems = await prisma.translationJobItem.findMany({
+                where: { jobId: job.id, status: 'completed' },
+                select: { sourcePath: true, targetLanguage: true, outputPath: true },
+              })
+              let readmeContent = ''
+              try {
+                readmeContent = await getFileContent(
+                  octokit, repo.ownerLogin, repo.repoName, 'README.md', repo.defaultBranch
+                )
+              } catch {
+                readmeContent = '# ' + repo.repoName + '\n\n'
+              }
+              const section = buildReadmeTranslationsSection(readmeContent, completedItems)
+              const updatedReadme = upsertReadmeTranslationsSection(readmeContent, section)
+              const readmeSha = await getFileSha(
+                octokit, repo.ownerLogin, repo.repoName, 'README.md', branchName
+              )
+              await createOrUpdateFile(
+                octokit, repo.ownerLogin, repo.repoName, 'README.md', updatedReadme,
+                'docs: add README translations section with doc links',
+                branchName, readmeSha
+              )
+            }
+
             const prTitle = `[${GITHUB_APP_DISPLAY_NAME}] Translation Job #${job.id}`
             const prBody = `🤖 **Created by [${GITHUB_APP_DISPLAY_NAME}](${GITHUB_APP_URL})** - Markdown translation assistant for GitHub repositories.
 

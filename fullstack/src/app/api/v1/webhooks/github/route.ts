@@ -59,13 +59,13 @@ export async function POST(req: NextRequest) {
     const trackedDocs = await prisma.trackedDocument.findMany({
       where: { repoId: repo.id },
     })
-    const trackedPaths = new Set(trackedDocs.map((d) => d.sourcePath))
-    const toTranslate = [...changedMds].filter((p) => trackedPaths.has(p))
+    const docByPath = new Map(trackedDocs.map((d) => [d.sourcePath, d]))
+    const configLangs = (config.targetLanguages as string[]) || []
+    const toTranslate = [...changedMds].filter((p) => docByPath.has(p))
 
     if (toTranslate.length === 0) return NextResponse.json({ ok: true })
 
     const dedupeKey = `push-${deliveryId}`
-    const targetLangs = config.targetLanguages as string[]
 
     const job = await prisma.translationJob.create({
       data: {
@@ -83,7 +83,11 @@ export async function POST(req: NextRequest) {
     }
     const items: ItemData[] = []
     for (const path of toTranslate) {
-      for (const lang of targetLangs) {
+      const doc = docByPath.get(path)!
+      const langs = (doc.targetLanguages as string[])?.length
+        ? (doc.targetLanguages as string[])
+        : configLangs
+      for (const lang of langs) {
         items.push({
           jobId: job.id,
           repoId: repo.id,

@@ -72,6 +72,7 @@ export interface RepoTree {
 export interface TrackedDoc {
   id: string
   sourcePath: string
+  targetLanguages: string[]
   isActive: boolean
 }
 
@@ -110,6 +111,7 @@ export interface JobItem {
 
 export interface PullRequestInfo {
   id: string
+  jobId: string
   prNumber: number
   title: string
   htmlUrl: string
@@ -166,10 +168,19 @@ export const repos = {
   getTrackedDocs: (repoId: string) => request<TrackedDoc[]>(`/repos/${repoId}/tracked-docs`),
   getTranslatedDocs: (repoId: string) =>
     request<{ paths: string[] }>(`/repos/${repoId}/translated-docs`).then((d) => d.paths),
-  saveTrackedDocs: (repoId: string, filePaths: string[]) =>
+  saveTrackedDocs: (
+    repoId: string,
+    filePaths: string[],
+    removedPaths?: string[],
+    docLanguages?: Record<string, string[]>
+  ) =>
     request<TrackedDoc[]>(`/repos/${repoId}/tracked-docs`, {
       method: 'PUT',
-      body: JSON.stringify({ filePaths }),
+      body: JSON.stringify({ filePaths, removedPaths: removedPaths ?? [], docLanguages: docLanguages ?? {} }),
+    }),
+  refreshReadme: (repoId: string) =>
+    request<{ prUrl: string; prNumber: number }>(`/repos/${repoId}/refresh-readme`, {
+      method: 'POST',
     }),
 }
 

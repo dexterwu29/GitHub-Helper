@@ -25,7 +25,7 @@ export async function POST(
   })
   if (trackedDocs.length === 0) return badRequest('No tracked documents')
 
-  const targetLanguages = config.targetLanguages as string[]
+  const configLangs = (config.targetLanguages as string[]) || []
   const dedupe = crypto.randomUUID()
 
   const job = await prisma.translationJob.create({
@@ -48,7 +48,10 @@ export async function POST(
 
   const items: ItemData[] = []
   for (const doc of trackedDocs) {
-    for (const lang of targetLanguages) {
+    const langs = (doc.targetLanguages as string[])?.length
+      ? (doc.targetLanguages as string[])
+      : configLangs
+    for (const lang of langs) {
       items.push({
         jobId: job.id,
         repoId: repo.id,

@@ -17,7 +17,7 @@ export async function GET(
     } catch {
       return notFound('Job not found')
     }
-    if (jobIdNum < 0n) return notFound('Job not found')
+    if (jobIdNum < BigInt(0)) return notFound('Job not found')
 
     const job = await prisma.translationJob.findUnique({
       where: { id: jobIdNum },

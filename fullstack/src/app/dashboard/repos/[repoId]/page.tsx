@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   XCircle,
   RefreshCw,
+  FileEdit,
 } from 'lucide-react'
 import {
   repos as reposApi,
@@ -45,10 +46,13 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
   const [targetLanguages, setTargetLanguages] = useState<string[]>([])
   const [runMode, setRunMode] = useState('platform')
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set())
+  const [trackedAtLoad, setTrackedAtLoad] = useState<Set<string>>(new Set())
+  const [docLanguages, setDocLanguages] = useState<Record<string, string[]>>({})
   const [translatedPaths, setTranslatedPaths] = useState<Set<string>>(new Set())
 
   const [activeJob, setActiveJob] = useState<JobDetail | null>(null)
   const [triggering, setTriggering] = useState(false)
+  const [refreshingReadme, setRefreshingReadme] = useState(false)
 
   const loadRepo = useCallback(async () => {
     try {
@@ -71,13 +75,22 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
   const loadTree = useCallback(async () => {
     setTreeLoading(true)
     try {
-      const [t, tracked, translated] = await Promise.all([
+      const [t, tracked, translated, config] = await Promise.all([
         reposApi.getTree(repoId),
         reposApi.getTrackedDocs(repoId),
         reposApi.getTranslatedDocs(repoId).catch(() => []),
+        reposApi.getConfig(repoId).catch(() => null),
       ])
       setTree(t)
-      setSelectedDocs(new Set(tracked.map((d) => d.sourcePath)))
+      const defaultLangs = (config?.targetLanguages as string[]) || []
+      const trackedPaths = new Set(tracked.map((d) => d.sourcePath))
+      const langsMap: Record<string, string[]> = {}
+      for (const d of tracked) {
+        langsMap[d.sourcePath] = d.targetLanguages?.length ? d.targetLanguages : defaultLangs
+      }
+      setSelectedDocs(trackedPaths)
+      setTrackedAtLoad(trackedPaths)
+      setDocLanguages(langsMap)
       setTranslatedPaths(new Set(translated))
     } catch {
       // ignore
@@ -96,10 +109,19 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
   useEffect(() => {
     if (!initialLoadDone.current || !repoId || !tree) return
     const timer = setTimeout(() => {
-      reposApi.saveTrackedDocs(repoId, Array.from(selectedDocs)).catch(() => {})
+      const paths = Array.from(selectedDocs)
+      const removed = Array.from(trackedAtLoad).filter((p) => !selectedDocs.has(p))
+      const langs: Record<string, string[]> = {}
+      paths.forEach((p) => {
+        langs[p] = docLanguages[p]?.length ? docLanguages[p] : targetLanguages
+      })
+      reposApi
+        .saveTrackedDocs(repoId, paths, removed, langs)
+        .then(() => setTrackedAtLoad(new Set(paths)))
+        .catch(() => {})
     }, 600)
     return () => clearTimeout(timer)
-  }, [repoId, selectedDocs, tree])
+  }, [repoId, selectedDocs, docLanguages, targetLanguages, tree])
 
   useEffect(() => {
     if (!loading && tree) initialLoadDone.current = true
@@ -134,7 +156,14 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
         targetLanguages,
         runMode,
       })
-      await reposApi.saveTrackedDocs(repoId, Array.from(selectedDocs))
+      const paths = Array.from(selectedDocs)
+      const removed = Array.from(trackedAtLoad).filter((p) => !selectedDocs.has(p))
+      const langs: Record<string, string[]> = {}
+      paths.forEach((p) => {
+        langs[p] = docLanguages[p]?.length ? docLanguages[p] : targetLanguages
+      })
+      await reposApi.saveTrackedDocs(repoId, paths, removed, langs)
+      setTrackedAtLoad(new Set(paths))
       setSaveMsg({ type: 'ok', text: '配置已保存' })
       await loadRepo()
     } catch (e) {
@@ -154,7 +183,14 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
         targetLanguages,
         runMode,
       })
-      await reposApi.saveTrackedDocs(repoId, Array.from(selectedDocs))
+      const paths = Array.from(selectedDocs)
+      const removed = Array.from(trackedAtLoad).filter((p) => !selectedDocs.has(p))
+      const langs: Record<string, string[]> = {}
+      paths.forEach((p) => {
+        langs[p] = docLanguages[p]?.length ? docLanguages[p] : targetLanguages
+      })
+      await reposApi.saveTrackedDocs(repoId, paths, removed, langs)
+      setTrackedAtLoad(new Set(paths))
 
       const result = await jobsApi.trigger(repoId)
       const detail = await jobsApi.get(result.jobId)
@@ -177,11 +213,32 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
     }
   }
 
+  const handleRefreshReadme = async () => {
+    setRefreshingReadme(true)
+    setSaveMsg(null)
+    try {
+      const { prUrl } = await reposApi.refreshReadme(repoId)
+      setSaveMsg({ type: 'ok', text: `已创建 PR，请审核` })
+      window.open(prUrl, '_blank')
+    } catch (e) {
+      setSaveMsg({ type: 'err', text: e instanceof ApiError ? e.message : '刷新 README 失败' })
+    } finally {
+      setRefreshingReadme(false)
+    }
+  }
+
   const toggleDoc = (path: string) => {
     setSelectedDocs((prev) => {
       const next = new Set(prev)
-      if (next.has(path)) next.delete(path)
-      else next.add(path)
+      if (next.has(path)) {
+        next.delete(path)
+        return next
+      }
+      next.add(path)
+      setDocLanguages((langs) => ({
+        ...langs,
+        [path]: targetLanguages.length > 0 ? [...targetLanguages] : [],
+      }))
       return next
     })
   }
@@ -189,9 +246,24 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
   const selectPaths = (paths: string[], add: boolean) => {
     setSelectedDocs((prev) => {
       const next = new Set(prev)
-      paths.forEach((p) => (add ? next.add(p) : next.delete(p)))
+      if (add) {
+        paths.forEach((p) => next.add(p))
+        setDocLanguages((langs) => {
+          const nextLangs = { ...langs }
+          paths.forEach((p) => {
+            nextLangs[p] = targetLanguages.length > 0 ? [...targetLanguages] : []
+          })
+          return nextLangs
+        })
+      } else {
+        paths.forEach((p) => next.delete(p))
+      }
       return next
     })
+  }
+
+  const setDocLangs = (path: string, langs: string[]) => {
+    setDocLanguages((prev) => ({ ...prev, [path]: langs }))
   }
 
   const toggleTarget = (lang: string) => {
@@ -213,7 +285,10 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
     )
   }
 
-  const canTrigger = !!baseLanguage && targetLanguages.length > 0 && selectedDocs.size > 0
+  const canTrigger =
+    !!baseLanguage &&
+    selectedDocs.size > 0 &&
+    Array.from(selectedDocs).every((p) => (docLanguages[p] ?? targetLanguages).length > 0)
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -263,7 +338,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-surface-700 mb-1.5">目标语言（多选）</label>
+              <label className="block text-sm font-medium text-surface-700 mb-1.5">目标语言（新文档默认，可下方单独设置）</label>
               <div className="flex flex-wrap gap-2">
                 {SUPPORTED_LANGUAGES.filter((l) => l.code !== baseLanguage).map((l) => {
                   const active = targetLanguages.includes(l.code)
@@ -340,6 +415,73 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
             ) : (
               <p className="text-sm text-surface-400 py-6 text-center">无法加载文件树</p>
             )}
+            <p className="text-xs text-surface-500 border-t border-surface-100 pt-3 mt-3">
+              <span className="font-medium text-surface-600">说明：</span> 勾选 = 追踪；取消勾选后保存 = 移除监听。
+              绿色 ✓ = 已有翻译。下方可单独设置每个文档的监听语言。
+            </p>
+
+            {selectedDocs.size > 0 && (
+              <div className="border-t border-surface-100 pt-3 mt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-semibold text-surface-700">已配置文档与监听语言</h3>
+                  {targetLanguages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next: Record<string, string[]> = {}
+                        Array.from(selectedDocs).forEach((p) => {
+                          next[p] = [...targetLanguages]
+                        })
+                        setDocLanguages((prev) => ({ ...prev, ...next }))
+                      }}
+                      className="text-xs text-brand-600 hover:text-brand-700 cursor-pointer"
+                    >
+                      全部改为默认
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-48 overflow-y-auto space-y-2">
+                  {Array.from(selectedDocs)
+                    .sort()
+                    .map((path) => {
+                      const langs = docLanguages[path] ?? targetLanguages
+                      const availLangs = SUPPORTED_LANGUAGES.filter((l) => l.code !== baseLanguage)
+                      return (
+                        <div
+                          key={path}
+                          className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-surface-50 text-sm"
+                        >
+                          <span className="font-mono text-surface-700 truncate flex-1 min-w-0" title={path}>
+                            {path}
+                          </span>
+                          <div className="flex flex-wrap gap-1 flex-shrink-0">
+                            {availLangs.map((l) => {
+                              const on = langs.includes(l.code)
+                              return (
+                                <button
+                                  key={l.code}
+                                  type="button"
+                                  onClick={() => {
+                                    const next = on ? langs.filter((x) => x !== l.code) : [...langs, l.code]
+                                    setDocLangs(path, next)
+                                  }}
+                                  className={`px-2 py-0.5 rounded text-xs font-medium border cursor-pointer transition-colors ${
+                                    on
+                                      ? 'bg-brand-100 text-brand-700 border-brand-300'
+                                      : 'bg-surface-0 text-surface-500 border-surface-200 hover:border-surface-300'
+                                  }`}
+                                >
+                                  {l.label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
@@ -400,6 +542,20 @@ export default function RepoDetailPage({ params }: { params: Promise<{ repoId: s
             <GitPullRequest className="w-4 h-4" />
             查看 PR 列表
           </Link>
+
+          <button
+            onClick={handleRefreshReadme}
+            disabled={refreshingReadme}
+            className="btn-secondary text-sm w-full justify-center"
+            title="根据 _i18n 全量内容规范化 README.md 的 Translations 区块并提交 PR"
+          >
+            {refreshingReadme ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileEdit className="w-4 h-4" />
+            )}
+            一键刷新 README
+          </button>
         </div>
       </div>
     </div>

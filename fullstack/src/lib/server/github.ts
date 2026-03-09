@@ -206,3 +206,19 @@ export async function getDefaultBranch(octokit: Octokit, owner: string, repo: st
   const { data } = await octokit.repos.get({ owner, repo })
   return data.default_branch
 }
+
+/** 从 GitHub 获取 PR 当前状态：merged | open | closed */
+export async function getPullRequestStatus(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  pullNumber: number
+): Promise<'merged' | 'open' | 'closed'> {
+  try {
+    const { data } = await octokit.pulls.get({ owner, repo, pull_number: pullNumber })
+    if (data.merged) return 'merged'
+    return data.state === 'closed' ? 'closed' : 'open'
+  } catch {
+    return 'closed'
+  }
+}
