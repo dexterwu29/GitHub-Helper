@@ -96,6 +96,7 @@ export interface JobSummary {
 export interface JobDetail extends JobSummary {
   repoId: string
   items: JobItem[]
+  prs?: { prUrl: string; prNumber: number }[]
 }
 
 export interface JobItem {
@@ -198,6 +199,10 @@ export const jobs = {
     request<{ jobId: string; status: string }>(`/jobs/${jobId}/retry`, { method: 'POST' }),
   cancel: (jobId: string) =>
     request<{ jobId: string; status: string }>(`/jobs/${jobId}/cancel`, { method: 'POST' }),
+  processNow: () =>
+    request<{ ok: boolean; processed: number }>(`/jobs/process-now`, { method: 'POST' }),
+  createPr: (jobId: string) =>
+    request<{ prUrl: string; prNumber: number }>(`/jobs/${jobId}/create-pr`, { method: 'POST' }),
 }
 
 // ─── Pull Requests ───

@@ -4,6 +4,9 @@ import { getInstallationOctokit, getFileContent, createOrUpdateFile, getFileSha,
 import { translateMarkdown } from '@/lib/server/translation'
 import { decrypt } from '@/lib/server/crypto'
 
+/** 测试阶段：每个仓库平台额度可调用翻译任务数 */
+const PLATFORM_QUOTA_PER_REPO = 100
+
 export async function GET(req: NextRequest) {
   try {
     const isLocal = process.env.APP_ENV === 'local'
@@ -31,19 +34,60 @@ export async function GET(req: NextRequest) {
       const repo = await prisma.repository.findUnique({
         where: { id: job.repoId },
       })
-      if (!repo) continue
+      if (!repo) {
+        console.warn('[process-jobs] Repo not found for job', job.id)
+        continue
+      }
 
       const config = await prisma.translationConfig.findUnique({
         where: { repoId: repo.id },
       })
-      if (!config) continue
+      if (!config) {
+        console.warn('[process-jobs] No translation config for repo', repo.fullName)
+        continue
+      }
 
-      let apiKey = process.env.OPENROUTER_API_KEY_PLATFORM!
+      let apiKey = process.env.OPENROUTER_API_KEY_PLATFORM || ''
       if (config.runMode === 'byoKey' && config.userApiKeyId) {
         const userKey = await prisma.userApiKey.findUnique({
           where: { id: config.userApiKeyId },
         })
         if (userKey) apiKey = decrypt(userKey.encryptedKey)
+      }
+
+      const keyValid = apiKey && apiKey.length > 10 && !apiKey.toLowerCase().includes('never-use')
+      if (!keyValid) {
+        console.error('[process-jobs] Invalid or missing OpenRouter API key. Set OPENROUTER_API_KEY_PLATFORM in .env with your key from https://openrouter.ai/keys')
+        await prisma.translationJob.update({
+          where: { id: job.id },
+          data: {
+            status: 'failed',
+            errorMessage: '平台 OpenRouter API Key 未配置或无效，请在 .env 中设置 OPENROUTER_API_KEY_PLATFORM',
+            finishedAt: new Date(),
+          },
+        })
+        continue
+      }
+
+      if (config.runMode === 'platform') {
+        const usedCount = await prisma.translationJobItem.count({
+          where: {
+            repoId: repo.id,
+            status: 'completed',
+          },
+        })
+        if (usedCount >= PLATFORM_QUOTA_PER_REPO) {
+          console.warn('[process-jobs] Repo quota exceeded', repo.fullName, usedCount, PLATFORM_QUOTA_PER_REPO)
+          await prisma.translationJob.update({
+            where: { id: job.id },
+            data: {
+              status: 'failed',
+              errorMessage: `平台额度已用尽（${usedCount}/${PLATFORM_QUOTA_PER_REPO}），请使用「自带 API Key」模式`,
+              finishedAt: new Date(),
+            },
+          })
+          continue
+        }
       }
 
       const octokit = await getInstallationOctokit(Number(repo.installationId))
@@ -60,6 +104,7 @@ export async function GET(req: NextRequest) {
           where: { id: item.id },
           data: { status: 'running' },
         })
+        console.log('[process-jobs] Translating', item.sourcePath, '->', item.targetLanguage)
 
         try {
           const sourceContent = await getFileContent(
@@ -86,6 +131,7 @@ export async function GET(req: NextRequest) {
           })
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
+          console.error('[process-jobs] Item failed', item.sourcePath, item.targetLanguage, msg)
           await prisma.translationJobItem.update({
             where: { id: item.id },
             data: { status: 'failed', errorMessage: msg.slice(0, 2000) },
@@ -145,7 +191,8 @@ export async function GET(req: NextRequest) {
               },
             })
           } catch (prErr) {
-            console.error('Failed to create PR:', prErr)
+            const prMsg = prErr instanceof Error ? prErr.message : String(prErr)
+            console.error('[process-jobs] Failed to create PR for job', job.id, prMsg)
           }
         }
       }

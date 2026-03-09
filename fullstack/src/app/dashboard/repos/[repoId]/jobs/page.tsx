@@ -127,18 +127,37 @@ export default function JobsPage({ params }: { params: Promise<{ repoId: string 
     }
   }
 
+  const [creatingPr, setCreatingPr] = useState(false)
+  const [createPrError, setCreatePrError] = useState<string | null>(null)
+  const handleCreatePr = async () => {
+    if (!selectedJob) return
+    setCreatingPr(true)
+    setCreatePrError(null)
+    try {
+      const res = await jobsApi.createPr(selectedJob.id)
+      const updated = await jobsApi.get(selectedJob.id)
+      setSelectedJob(updated)
+      loadPRs()
+      if (res.prUrl) window.open(res.prUrl, '_blank')
+    } catch (e) {
+      setCreatePrError(e instanceof Error ? e.message : '创建 PR 失败')
+    } finally {
+      setCreatingPr(false)
+    }
+  }
+
   const [processing, setProcessing] = useState(false)
   const handleProcessNow = async () => {
     setProcessing(true)
     try {
-      const res = await fetch('/api/cron/process-jobs', { credentials: 'include' })
-      if (res.ok) {
-        await loadJobs(jobPage)
-        if (selectedJob && (selectedJob.status === 'pending' || selectedJob.status === 'running')) {
-          const updated = await jobsApi.get(selectedJob.id)
-          setSelectedJob(updated)
-        }
+      await jobsApi.processNow()
+      await loadJobs(jobPage)
+      if (selectedJob && (selectedJob.status === 'pending' || selectedJob.status === 'running')) {
+        const updated = await jobsApi.get(selectedJob.id)
+        setSelectedJob(updated)
       }
+    } catch {
+      // ignore
     } finally {
       setProcessing(false)
     }
@@ -186,9 +205,11 @@ export default function JobsPage({ params }: { params: Promise<{ repoId: string 
       {tab === 'jobs' && (
         <div className="grid lg:grid-cols-5 gap-6">
           <div className="lg:col-span-3 space-y-3">
-            {isLocalDev && hasPendingJobs && (
+            {hasPendingJobs && (
               <div className="card p-3 bg-amber-50 border-amber-200">
-                <p className="text-xs text-amber-800 mb-2">本地开发：Vercel Cron 不会自动执行，请手动触发</p>
+                <p className="text-xs text-amber-800 mb-2">
+                  {isLocalDev ? '本地开发：Vercel Cron 不会自动执行，请手动触发' : '有任务正在排队，点击立即处理'}
+                </p>
                 <button
                   onClick={handleProcessNow}
                   disabled={processing}
@@ -275,6 +296,23 @@ export default function JobsPage({ params }: { params: Promise<{ repoId: string 
             ) : selectedJob ? (
               <div className="space-y-3">
                 <JobProgress job={selectedJob} />
+                {(selectedJob.status === 'completed' || selectedJob.status === 'partial') &&
+                  selectedJob.completedItems > 0 &&
+                  (!selectedJob.prs || selectedJob.prs.length === 0) && (
+                  <div className="space-y-2">
+                    <button
+                      onClick={handleCreatePr}
+                      disabled={creatingPr}
+                      className="btn-primary text-sm w-full"
+                    >
+                      <GitPullRequest className="w-4 h-4" />
+                      {creatingPr ? '创建中...' : '手动提交 PR'}
+                    </button>
+                    {createPrError && (
+                      <p className="text-xs text-red-600">{createPrError}</p>
+                    )}
+                  </div>
+                )}
                 {(selectedJob.status === 'failed' || selectedJob.status === 'partial') && (
                   <button onClick={handleRetry} className="btn-secondary text-sm w-full">
                     <RefreshCw className="w-4 h-4" />

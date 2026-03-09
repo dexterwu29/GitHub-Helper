@@ -21,7 +21,7 @@ export async function GET(
 
     const job = await prisma.translationJob.findUnique({
       where: { id: jobIdNum },
-      include: { items: true, repo: true },
+      include: { items: true, repo: true, prs: true },
     })
     if (!job || job.repo.ownerGithubId !== user.id) return notFound('Job not found')
 
@@ -39,6 +39,7 @@ export async function GET(
       failedItems,
       startedAt: job.startedAt?.toISOString() ?? null,
       finishedAt: job.finishedAt?.toISOString() ?? null,
+      prs: job.prs.map((p) => ({ prUrl: p.prUrl, prNumber: p.prNumber })),
       items: job.items.map((it) => ({
         id: it.id.toString(),
         sourcePath: it.sourcePath,

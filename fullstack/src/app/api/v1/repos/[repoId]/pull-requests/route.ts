@@ -24,6 +24,7 @@ export async function GET(
       id: pr.id.toString(),
       prNumber: pr.prNumber,
       title: `PR #${pr.prNumber}`,
+      htmlUrl: pr.prUrl,
       prUrl: pr.prUrl,
       status: pr.status,
       createdAt: pr.createdAt.toISOString(),

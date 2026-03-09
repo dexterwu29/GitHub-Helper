@@ -1,5 +1,8 @@
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
+/** 平台默认模型：deepseek-v3.2 测试用。见 https://openrouter.ai/models */
+const DEFAULT_MODEL = 'deepseek/deepseek-v3.2'
+
 export async function translateMarkdown(
   content: string,
   targetLang: string,
@@ -9,7 +12,7 @@ export async function translateMarkdown(
   const actualModel =
     model ||
     process.env.OPENROUTER_DEFAULT_MODEL ||
-    'z-ai/glm-4.5-air:free'
+    DEFAULT_MODEL
 
   const systemPrompt = `You are a professional technical document translator. Translate the following Markdown document to ${targetLang}. Rules:
 1. Preserve ALL Markdown formatting (headers, links, code blocks, tables, lists)
@@ -18,11 +21,14 @@ export async function translateMarkdown(
 4. Keep the same document structure and line breaks
 5. Output ONLY the translated Markdown, no explanations`
 
+  const siteUrl = process.env.APP_BASE_URL || 'https://github-helper.app'
   const res = await fetch(OPENROUTER_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
+      'HTTP-Referer': siteUrl,
+      'X-OpenRouter-Title': 'GitHub Helper Translation',
     },
     body: JSON.stringify({
       model: actualModel,
@@ -37,7 +43,8 @@ export async function translateMarkdown(
 
   if (!res.ok) {
     const err = await res.text()
-    throw new Error(`OpenRouter API error (${res.status}): ${err}`)
+    console.error('[translation] OpenRouter API error:', res.status, err.slice(0, 500))
+    throw new Error(`OpenRouter API error (${res.status}): ${err.slice(0, 300)}`)
   }
 
   const data = await res.json()
