@@ -1,7 +1,35 @@
+# ─── Dependencies ───
 node_modules/
+
+# ─── Build / Output ───
 dist/
 .next/
+out/
+*.tsbuildinfo
+.turbo/
+
+# ─── Environment & Secrets ───
 .env
 .env.local
-*.tsbuildinfo
-.vercel
+.env.*.local
+
+# ─── Deployment ───
+.vercel/
+
+# ─── IDE / Editor ───
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ─── OS ───
+.DS_Store
+Thumbs.db
+
+# ─── Logs & Debug ───
+*.log
+npm-debug.log*
+.pnpm-debug.log*
+
+# ─── Windows artifact ───
+nul

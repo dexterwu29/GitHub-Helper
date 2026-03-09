@@ -16,6 +16,11 @@ export async function POST(req: Request) {
   const owner = match[1]
   const name = match[2].replace(/\.git$/, '')
 
+  // Check ownership first: User B cannot import User A's repo. Reject before checking installation.
+  if (owner.toLowerCase() !== user.githubLogin.toLowerCase()) {
+    return badRequest('您只能导入自己拥有的仓库，请先在您的仓库上安装 GitHub App 后再导入。')
+  }
+
   const installation = await getInstallationForRepo(owner, name)
   if (!installation) {
     return badRequest('GitHub App not installed on this repository. Please install the app first.')
