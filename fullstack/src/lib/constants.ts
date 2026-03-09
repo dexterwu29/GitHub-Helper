@@ -1,3 +1,8 @@
+/** GitHub App 标识，与 commit 作者 dexter-translator-helper-app[bot] 一致 */
+export const GITHUB_APP_SLUG = 'dexter-translator-helper-app'
+export const GITHUB_APP_DISPLAY_NAME = 'dexter-translator-helper-app'
+export const GITHUB_APP_URL = `https://github.com/apps/${GITHUB_APP_SLUG}`
+
 export const SUPPORTED_LANGUAGES = [
   { code: 'zh-CN', label: '简体中文' },
   { code: 'en', label: 'English' },

@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ['sparkly-nonstable-stanton.ngrok-free.dev'],
   images: {
     remotePatterns: [
       {

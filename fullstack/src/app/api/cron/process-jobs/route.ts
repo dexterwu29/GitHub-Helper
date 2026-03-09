@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/server/prisma'
+import { GITHUB_APP_DISPLAY_NAME, GITHUB_APP_URL } from '@/lib/constants'
 import { getInstallationOctokit, getFileContent, createOrUpdateFile, getFileSha, createBranch, createPullRequest } from '@/lib/server/github'
 import { translateMarkdown } from '@/lib/server/translation'
 import { decrypt } from '@/lib/server/crypto'
@@ -170,13 +171,17 @@ export async function GET(req: NextRequest) {
 
         if (completedCount > 0) {
           try {
-            const prTitle = `[Translation] Job #${job.id} translations`
+            const prTitle = `[${GITHUB_APP_DISPLAY_NAME}] Translation Job #${job.id}`
+            const prBody = `🤖 **Created by [${GITHUB_APP_DISPLAY_NAME}](${GITHUB_APP_URL})** - Markdown translation assistant for GitHub repositories.
+
+- Job ID: ${job.id}
+- Completed: ${completedCount}/${totalCount}`
             const pr = await createPullRequest(
               octokit, repo.ownerLogin, repo.repoName,
               prTitle,
               branchName,
               repo.defaultBranch,
-              `Automated translation by GitHub Helper\n\nJob ID: ${job.id}\nCompleted: ${completedCount}/${totalCount}`
+              prBody
             )
 
             await prisma.pullRequest.create({

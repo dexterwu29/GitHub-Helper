@@ -28,7 +28,7 @@ export async function translateMarkdown(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
       'HTTP-Referer': siteUrl,
-      'X-OpenRouter-Title': 'GitHub Helper Translation',
+      'X-OpenRouter-Title': 'dexter-translator-helper-app Translation',
     },
     body: JSON.stringify({
       model: actualModel,

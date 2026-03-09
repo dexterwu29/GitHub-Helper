@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthUser, unauthorized, notFound, ok } from '@/lib/server/auth'
 import { prisma } from '@/lib/server/prisma'
 import { getInstallationOctokit, createPullRequest } from '@/lib/server/github'
+import { GITHUB_APP_DISPLAY_NAME, GITHUB_APP_URL } from '@/lib/constants'
 
 /** 为已完成/部分成功的任务手动创建 PR（当自动创建失败时使用） */
 export async function POST(
@@ -52,14 +53,19 @@ export async function POST(
     const branchName = `translate/job-${job.id}`
     const totalCount = job.items.length
 
+    const prTitle = `[${GITHUB_APP_DISPLAY_NAME}] Translation Job #${job.id}`
+    const prBody = `🤖 **Created by [${GITHUB_APP_DISPLAY_NAME}](${GITHUB_APP_URL})** - Markdown translation assistant for GitHub repositories.
+
+- Job ID: ${job.id}
+- Completed: ${completedCount}/${totalCount}`
     const pr = await createPullRequest(
       octokit,
       job.repo.ownerLogin,
       job.repo.repoName,
-      `[Translation] Job #${job.id} translations`,
+      prTitle,
       branchName,
       job.repo.defaultBranch,
-      `Automated translation by GitHub Helper\n\nJob ID: ${job.id}\nCompleted: ${completedCount}/${totalCount}`
+      prBody
     )
 
     await prisma.pullRequest.create({

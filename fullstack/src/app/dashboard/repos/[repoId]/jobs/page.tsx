@@ -297,6 +297,24 @@ export default function JobsPage({ params }: { params: Promise<{ repoId: string 
               <div className="space-y-3">
                 <JobProgress job={selectedJob} />
                 {(selectedJob.status === 'completed' || selectedJob.status === 'partial') &&
+                  selectedJob.prs &&
+                  selectedJob.prs.length > 0 && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+                    <p className="text-sm text-emerald-800 font-medium">
+                      PR 已创建，可在「PR」标签页查看或直接打开
+                    </p>
+                    <a
+                      href={selectedJob.prs[0].prUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-primary text-xs shrink-0"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      打开 PR
+                    </a>
+                  </div>
+                )}
+                {(selectedJob.status === 'completed' || selectedJob.status === 'partial') &&
                   selectedJob.completedItems > 0 &&
                   (!selectedJob.prs || selectedJob.prs.length === 0) && (
                   <div className="space-y-2">
