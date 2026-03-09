@@ -1,5 +1,8 @@
 /** GitHub App 标识，与 commit 作者 dexter-translator-helper-app[bot] 一致 */
 export const GITHUB_APP_SLUG = 'dexter-translator-helper-app'
+
+/** 翻译输出目录，避免与语言代码冲突（不可出现在 targetLanguages 中） */
+export const DEFAULT_OUTPUT_DIR = '_i18n'
 export const GITHUB_APP_DISPLAY_NAME = 'dexter-translator-helper-app'
 export const GITHUB_APP_URL = `https://github.com/apps/${GITHUB_APP_SLUG}`
 

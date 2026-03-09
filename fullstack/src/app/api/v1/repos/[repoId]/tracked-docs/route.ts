@@ -47,16 +47,18 @@ export async function PUT(
 
     const uniquePaths = [...new Set(filePaths)].filter((fp): fp is string => typeof fp === 'string' && fp.length > 0)
 
-    await prisma.trackedDocument.deleteMany({ where: { repoId: repo.id } })
-
-    if (uniquePaths.length > 0) {
-      await prisma.trackedDocument.createMany({
-        data: uniquePaths.map((fp) => ({
-          repoId: repo.id,
-          sourcePath: fp,
-        })),
-      })
-    }
+    await prisma.$transaction(async (tx) => {
+      await tx.trackedDocument.deleteMany({ where: { repoId: repo.id } })
+      if (uniquePaths.length > 0) {
+        await tx.trackedDocument.createMany({
+          data: uniquePaths.map((fp) => ({
+            repoId: repo.id,
+            sourcePath: fp,
+          })),
+          skipDuplicates: true,
+        })
+      }
+    })
 
     const docs = await prisma.trackedDocument.findMany({
       where: { repoId: repo.id },

@@ -54,7 +54,7 @@ export async function POST(
         repoId: repo.id,
         sourcePath: doc.sourcePath,
         targetLanguage: lang,
-        outputPath: `translate/${lang}/${doc.sourcePath}`,
+        outputPath: `${config.outputDir}/${lang}/${doc.sourcePath}`,
         status: 'pending',
       })
     }

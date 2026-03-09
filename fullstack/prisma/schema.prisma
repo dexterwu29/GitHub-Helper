@@ -71,7 +71,7 @@ model TranslationConfig {
   repoId            BigInt   @unique @map("repo_id")
   baseLanguage      String   @map("base_language")
   targetLanguages   Json     @default("[]") @map("target_languages")
-  outputDir         String   @default("translate") @map("output_dir")
+  outputDir         String   @default("_i18n") @map("output_dir")
   readmeLinksEnabled Boolean @default(true) @map("readme_links_enabled")
   runMode           String   @map("run_mode")
   userApiKeyId      BigInt?  @map("user_api_key_id")

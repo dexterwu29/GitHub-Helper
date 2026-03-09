@@ -44,10 +44,11 @@ export async function POST(req: NextRequest) {
     if (!config) return NextResponse.json({ ok: true })
 
     const commits = payload.commits || []
+    const outPrefix = `${config.outputDir}/`
     const changedMds = new Set<string>()
     for (const commit of commits) {
       for (const f of [...(commit.added || []), ...(commit.modified || [])]) {
-        if (typeof f === 'string' && f.endsWith('.md') && !f.startsWith('translate/')) {
+        if (typeof f === 'string' && f.endsWith('.md') && !f.startsWith(outPrefix)) {
           changedMds.add(f)
         }
       }
@@ -88,7 +89,7 @@ export async function POST(req: NextRequest) {
           repoId: repo.id,
           sourcePath: path,
           targetLanguage: lang,
-          outputPath: `translate/${lang}/${path}`,
+          outputPath: `${config.outputDir}/${lang}/${path}`,
           status: 'pending',
         })
       }
